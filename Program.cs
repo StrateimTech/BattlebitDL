@@ -17,7 +17,7 @@ namespace BattlebitDL;
 #pragma warning disable CA1416
 class Program
 {
-    // TODO: Replace this to either the absolute path or place inside bin!
+    // TODO: Replace this to either the absolute path or place inside bin when running!
     private const string ModelPath = @"./Model.onnx";
     private static Bitmap? _screenBitmap;
     private const int Width = 1920;
@@ -188,7 +188,7 @@ class Program
                 var mouseX = Width / 2;
                 var mouseY = Height / 2;
 
-                // Send these movements to the mouse (TCP/UDP Server externally or Directly with Win32 Mouse Events)
+                // TODO: Send these movements to the mouse (TCP/UDP Server externally or Directly with Win32 Mouse Events)
                 var deltaX = centerX - mouseX;
                 var deltaY = centerY - mouseY;
 

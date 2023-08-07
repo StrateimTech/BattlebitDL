@@ -1,6 +1,11 @@
 # BattleBitDL (BattleBit Deep learning)
 Attempts to mark/identify objects(players) both enemies and teammates using YoloV8's object detection on a custom dataset.
 
+# How to use
+- Please consult [Requirements](#Requirements) first.
+- Read all TODO comments in Program.cs (Replace ModelPath to a absolute path!)
+- Attempt to run (Running in a debug state will decrease performance exponentially!)
+
 # Model
 YoloV8 small model trained on 1.25k images at 1920x1088 (Original's 1920x1080).
 ![Model Results](results.png)
