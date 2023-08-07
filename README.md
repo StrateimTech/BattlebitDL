@@ -7,7 +7,7 @@ Attempts to mark/identify objects(players) both enemies and teammates using Yolo
 - Attempt to run (Running in a debug state will decrease performance exponentially!)
 
 # Model
-YoloV8 small model trained on 1.25k images at 1920x1088 (Original's 1920x1080).
+The model provided in onnx format is a YoloV8 small model trained on 1.25k images at 1920x1088 for about 425~ epochs (Original's are 1920x1080).
 ![Model Results](results.png)
 
 # Requirements
