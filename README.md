@@ -9,9 +9,10 @@ Attempts to mark/identify objects(players) both enemies and teammates using Yolo
 
 # Model
 The model provided in onnx format is a YoloV8 small model trained on 1.25k images at 1920x1088 for about 425~ epochs (Original's are 1920x1080).
-![Model Results](results.png)
-## Model Showcase
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/Cny8H-UTDYs/0.jpg)](https://www.youtube.com/watch?v=Cny8H-UTDYs)
+![Model training results](results.png)
+## Model youtube showcase
+[![Model Youtube](https://img.youtube.com/vi/Cny8H-UTDYs/0.jpg)](https://www.youtube.com/watch?v=Cny8H-UTDYs)
+<br>Model dataset will **NOT** be released!
 
 # Requirements
 - Windows Only
