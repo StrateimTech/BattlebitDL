@@ -19,12 +19,12 @@ class Program
 {
     // TODO: Replace this to either the absolute path or place inside bin when running!
     private const string ModelPath = @"./Model.onnx";
-    private static Bitmap? _screenBitmap;
     private const int Width = 1920;
     private const int Height = 1080;
 
     private static Image<Bgr, byte> _dataImage = new(1280, 720);
     private static Image? _desktopImage;
+    private static bool _new;
 
     private static readonly List<Prediction> Predictions = new();
 
@@ -39,6 +39,8 @@ class Program
         //     return;
         // }
         // Console.WriteLine("Connected to remote server!");
+        
+        StartModelInstance(null);
 
         new Task(() =>
         {
@@ -73,49 +75,14 @@ class Program
                     frames = 0;
                 }
 
-                try
-                {
-                    var resizedImage = localImage.Resize(1280.0 / Width, Inter.NearestExact);
-                    CvInvoke.Imshow("View", resizedImage);
-                    CvInvoke.WaitKey(1);
-                }
-                finally
-                {
-                    GC.Collect();
-                }
-            }
-        }).Start();
-
-        StartModelInstance(ModelPath, null);
-
-        new Task(() =>
-        {
-            while (true)
-            {
-                if (_screenBitmap == null)
-                {
-                    Thread.Sleep(1);
-                    continue;
-                }
-
-                try
-                {
-                    var memoryStream = new MemoryStream();
-                    _screenBitmap.Save(memoryStream, ImageFormat.Png);
-                    _desktopImage = Image.Load(memoryStream.ToArray());
-                }
-                finally
-                {
-                    GC.Collect();
-                }
-
-                Thread.Sleep(1);
+                using var resizedImage = localImage.Resize(1280.0 / Width, Inter.Nearest);
+                CvInvoke.Imshow("View", resizedImage);
+                CvInvoke.WaitKey(1);
             }
         }).Start();
 
         IntPtr hDc = Win32Api.GetDC(Win32Api.GetDesktopWindow());
         IntPtr hMemDc = Win32Api.CreateCompatibleDC(hDc);
-
         var mHBitmap = Win32Api.CreateCompatibleBitmap(hDc, Width, Height);
 
         while (true)
@@ -127,15 +94,12 @@ class Program
                 Win32Api.SelectObject(hMemDc, hOld);
                 var xHbitmap = System.Drawing.Image.FromHbitmap(mHBitmap);
 
-                try
-                {
-                    _dataImage = xHbitmap.ToImage<Bgr, byte>();
-                    _screenBitmap = xHbitmap;
-                }
-                finally
-                {
-                    GC.Collect();
-                }
+                _dataImage = xHbitmap.ToImage<Bgr, byte>();
+                
+                var memoryStream = new MemoryStream();
+                xHbitmap.Save(memoryStream, ImageFormat.Png);
+                _desktopImage = Image.Load(memoryStream.ToArray());
+                _new = true;
             }
             else
             {
@@ -144,22 +108,30 @@ class Program
         }
     }
 
-    private static void StartModelInstance(string model, NetworkStream? stream = null)
+    private static void StartModelInstance(NetworkStream? stream = null)
     {
         var modelInstance = new Thread(() =>
         {
-            using var yolo = YoloV8Predictor.Create(model, new[] {"Teammate", "Enemy"}, true);
+            using var yolo = YoloV8Predictor.Create(ModelPath, new[] {"Teammate", "Enemy"}, true);
             Console.WriteLine("Predictor loading into GPU Memory...  This might take a few seconds!");
-
+            
             while (true)
             {
-                if (_desktopImage == null)
+                if (_desktopImage == null || !_new)
                 {
                     Thread.Sleep(1);
                     continue;
                 }
-                HandlePredictions(yolo.Predict(_desktopImage), stream);
-                Thread.Sleep(1);
+    
+                var predictions = yolo.Predict(_desktopImage);
+                _new = false;
+                
+                if (predictions.Length <= 0)
+                {
+                    continue;
+                }
+                
+                HandlePredictions(predictions, stream);
             }
         })
         {
