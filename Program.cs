@@ -19,63 +19,55 @@ class Program
 {
     // TODO: Replace this to either the absolute path or place inside bin when running!
     private const string ModelPath = @"./Model.onnx";
-    private const int Width = 1920;
-    private const int Height = 1080;
-
+    private static readonly (int width, int height) DesktopResolution = (1920, 1080);
+    
     private static Image<Bgr, byte> _dataImage = new(1280, 720);
-    private static Image? _desktopImage;
-    private static bool _new;
-
-    private static readonly List<Prediction> Predictions = new();
+    
+    private static IDetectionResult? _predictions;
 
     [SupportedOSPlatform("windows")]
-    static void Main(string[] args)
+    public static void Main(string[] args)
     {
-        // using TcpClient client = new("192.168.0.182", 7483);
-        // using NetworkStream stream = client.GetStream();
-        // if (!client.Connected)
-        // {
-        //     Console.WriteLine("Failed to connect to remote server!");
-        //     return;
-        // }
-        // Console.WriteLine("Connected to remote server!");
+        Socket s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        IPAddress broadcast = IPAddress.Parse("192.168.0.181");
+        IPEndPoint ep = new IPEndPoint(broadcast, 7483);
         
-        StartModelInstance(null);
-
+        Console.WriteLine("Loading yolov8 predictor... this will take a moment");
+        using var predictor = new YoloV8(ModelPath, new YoloV8Metadata("", "", "", YoloV8Task.Detect, -1, new SixLabors.ImageSharp.Size(1920, 1088), new []{new YoloV8Class(0, "Teammate"), new YoloV8Class(1, "Enemy")}), SessionOptions.MakeSessionOptionWithCudaProvider());
+        Console.WriteLine($"Loaded predictor into memory starting program! (Width: {predictor.Metadata.ImageSize.Width}, Height: {predictor.Metadata.ImageSize.Height})");
+        Console.WriteLine($"Maintain Aspect: {predictor.Parameters.KeepOriginalAspectRatio}, IoU: {predictor.Parameters.IoU}, Confidence: {predictor.Parameters.Confidence}");
+        
         new Task(() =>
         {
-            int frames = 0;
             while (true)
             {
-                frames++;
                 var localImage = _dataImage;
 
-                foreach (var prediction in Predictions)
+                if (_predictions != null)
                 {
-                    var x = (int) prediction.Rectangle.X;
-                    var y = (int) prediction.Rectangle.Y;
-                    var width = (int) prediction.Rectangle.Width;
-                    var height = (int) prediction.Rectangle.Height;
-
-                    var centerX = x + width / 2;
-                    var centerY = y + height / 2;
-
-                    var color = prediction.Label is {Id: 1} ? new MCvScalar(0, 150, 255) : new MCvScalar(238, 75, 43);
-
-                    var rect = new Rectangle(new Point(x, y), new Size(width, height));
-                    CvInvoke.Rectangle(localImage, rect, color, 2, LineType.AntiAlias);
-                    CvInvoke.Circle(localImage, new Point(centerX, centerY), 8, color);
-                    CvInvoke.PutText(localImage, $"{Math.Round(prediction.Score * 1000) / 1000} {prediction.Label?.Name}", new Point(x, y - 6),
-                        FontFace.HersheyDuplex, 0.75, new MCvScalar(255, 234, 0), 1, LineType.AntiAlias);
+                    foreach (var prediction in _predictions.Boxes)
+                    {
+                        var x = prediction.Bounds.X;
+                        var y = prediction.Bounds.Y;
+                        var width = prediction.Bounds.Width;
+                        var height = prediction.Bounds.Height;
+                
+                        var centerX = x + width / 2;
+                        var centerY = y + height / 2;
+                
+                        var color = prediction.Class.Id is 1 ? new MCvScalar(0, 150, 255) : new MCvScalar(238, 75, 43);
+                
+                        var rect = new Rectangle(new Point(x, y), new Size(width, height));
+                        CvInvoke.Rectangle(localImage, rect, color, 2, LineType.AntiAlias);
+                        CvInvoke.Circle(localImage, new Point(centerX, centerY), 8, color);
+                        CvInvoke.PutText(localImage, $"{Math.Round(prediction.Confidence * 1000) / 1000} {prediction.Class.Name}", new Point(x, y - 6),
+                            FontFace.HersheyDuplex, 0.75, new MCvScalar(255, 234, 0), 1, LineType.AntiAlias);
+                    }
+                    
+                    _predictions = null;
                 }
-
-                if (frames >= 30)
-                {
-                    Predictions.Clear();
-                    frames = 0;
-                }
-
-                using var resizedImage = localImage.Resize(1280.0 / Width, Inter.Nearest);
+        
+                using var resizedImage = localImage.Resize(1280.0 / DesktopResolution.width, Inter.Nearest);
                 CvInvoke.Imshow("View", resizedImage);
                 CvInvoke.WaitKey(1);
             }
@@ -83,23 +75,26 @@ class Program
 
         IntPtr hDc = Win32Api.GetDC(Win32Api.GetDesktopWindow());
         IntPtr hMemDc = Win32Api.CreateCompatibleDC(hDc);
-        var mHBitmap = Win32Api.CreateCompatibleBitmap(hDc, Width, Height);
-
+        var mHBitmap = Win32Api.CreateCompatibleBitmap(hDc, DesktopResolution.width, DesktopResolution.height);
+        
+        
         while (true)
         {
             if (mHBitmap != IntPtr.Zero)
             {
                 IntPtr hOld = Win32Api.SelectObject(hMemDc, mHBitmap);
-                Win32Api.BitBlt(hMemDc, 0, 0, Width, Height, hDc, 0, 0, Win32Api.Srccopy | Win32Api.Captureblt);
+                Win32Api.BitBlt(hMemDc, 0, 0, DesktopResolution.width, DesktopResolution.height, hDc, 0, 0, Win32Api.Srccopy | Win32Api.Captureblt);
                 Win32Api.SelectObject(hMemDc, hOld);
+                
                 var xHbitmap = System.Drawing.Image.FromHbitmap(mHBitmap);
 
                 _dataImage = xHbitmap.ToImage<Bgr, byte>();
                 
                 var memoryStream = new MemoryStream();
                 xHbitmap.Save(memoryStream, ImageFormat.Png);
-                _desktopImage = Image.Load(memoryStream.ToArray());
-                _new = true;
+                var desktopImage = Image.Load(memoryStream.ToArray());
+                
+                HandleImage(predictor, desktopImage, ep, s);
             }
             else
             {
@@ -108,72 +103,65 @@ class Program
         }
     }
 
-    private static void StartModelInstance(NetworkStream? stream = null)
-    {
-        var modelInstance = new Thread(() =>
-        {
-            using var yolo = YoloV8Predictor.Create(ModelPath, new[] {"Teammate", "Enemy"}, true);
-            Console.WriteLine("Predictor loading into GPU Memory...  This might take a few seconds!");
-            
-            while (true)
-            {
-                if (_desktopImage == null || !_new)
-                {
-                    Thread.Sleep(1);
-                    continue;
-                }
-    
-                var predictions = yolo.Predict(_desktopImage);
-                _new = false;
-                
-                if (predictions.Length <= 0)
-                {
-                    continue;
-                }
-                
-                HandlePredictions(predictions, stream);
-            }
-        })
-        {
-            IsBackground = true
-        };
 
-        modelInstance.Start();
+    private static void HandleImage(YoloV8 predictor, Image desktopImage, IPEndPoint endPoint, Socket socket)
+    {
+        var prediction = predictor.Detect(desktopImage);
+        // Console.WriteLine($"({prediction.Speed.Inference.TotalMilliseconds} {prediction.Speed.Postprocess.TotalMilliseconds} {prediction.Speed.Preprocess.TotalMilliseconds}) -> ({(prediction.Speed.Inference.TotalMilliseconds + prediction.Speed.Postprocess.TotalMilliseconds + prediction.Speed.Preprocess.TotalMilliseconds)}ms)");
+                
+        if (prediction.Boxes.Count <= 0)
+        {
+            return;
+        }
+                
+        _predictions = prediction;
+
+        HandlePrediction(prediction, endPoint, socket);
     }
 
-    private static void HandlePredictions(Prediction[] predictions, NetworkStream? stream = null)
+    private static void HandlePrediction(IDetectionResult detection, IPEndPoint endPoint, Socket socket)
     {
-        foreach (var prediction in predictions)
+        var enemies = detection.Boxes.Where(x => x.Class.Id == 1 && x.Confidence > 0.50).ToList();
+
+        if (enemies.Count <= 0)
         {
-            Predictions.Add(prediction);
+            return;
         }
 
-        var enemies = predictions.Where(x => x.Label?.Id == 1);
-        foreach (var enemy in enemies)
+        var closestEnumerable = enemies.OrderBy(e =>
         {
-            if (enemy.Score > 0.65)
-            {
-                var centerX = enemy.Rectangle.X + (enemy.Rectangle.Width / 2);
-                var centerY = enemy.Rectangle.Y + (enemy.Rectangle.Height / 2);
-
-                // Assuming mouse is dead center
-                var mouseX = Width / 2;
-                var mouseY = Height / 2;
-
-                // TODO: Send these movements to the mouse (TCP/UDP Server externally or Directly with Win32 Mouse Events)
-                var deltaX = centerX - mouseX;
-                var deltaY = centerY - mouseY;
-
-                // var data = $"{deltaX},{deltaY}";
-                // if (stream != null)
-                // {
-                //     stream.Write(Encoding.UTF8.GetBytes(data));
-                // }
-
-                Console.WriteLine($"Enemy found! (X: {centerX}, Y: {centerY}, Score: {enemy.Score}) (DeltaX: {deltaX}, DeltaY: {deltaY})");
-                break;
-            }
-        }
+            var centerX = e.Bounds.X + (e.Bounds.Width / 2);
+            var mouseX = DesktopResolution.width / 2;
+            var deltaX = centerX - mouseX;
+            
+            return deltaX;
+        }).ThenBy(e =>
+        {
+            var centerY = e.Bounds.Y + (e.Bounds.Height / 2);
+            var mouseY = DesktopResolution.height / 2;
+            var deltaY = centerY - mouseY;
+            
+            return deltaY;
+        }).ThenBy(e => e.Confidence);
+        
+        var closestList = closestEnumerable.ToList();
+        var closest = closestList[0];
+        
+        var centerX = closest.Bounds.X + (closest.Bounds.Width / 2);
+        var centerY = closest.Bounds.Y + (closest.Bounds.Height / 2);
+        
+        // Assuming mouse is dead center
+        var mouseX = DesktopResolution.width / 2;
+        var mouseY = DesktopResolution.height / 2;
+        
+        // TODO: Send these movements to the mouse (TCP/UDP Server externally or Directly with Win32 Mouse Events)
+        var deltaX = centerX - mouseX;
+        var deltaY = centerY - mouseY;
+        
+        var data = $"{deltaX},{deltaY},false";
+        socket.SendTo(Encoding.UTF8.GetBytes(data), endPoint);
+        
+        Console.WriteLine($"Enemy found! (X: {centerX}, Y: {centerY}, Score: {closest.Confidence}) (DeltaX: {deltaX}, DeltaY: {deltaY})");
     }
 
     private static class Win32Api
