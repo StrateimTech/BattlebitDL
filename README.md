@@ -17,6 +17,7 @@ The model provided in onnx format is a YoloV8 small model trained on 1.25k image
 # Requirements
 - Windows Only
 - Nvidia GPU
+- Powerful CPU (Anything within the last couple of years)
 - CUDA 11.X, cuDNN 11.X, zlib 1.2.3 installed / linked to path
 - Knowledge
 
@@ -27,3 +28,6 @@ The model provided in onnx format is a YoloV8 small model trained on 1.25k image
   - Emgu.CV.Runtime.Windows
 - Microsoft.ML.OnnxRuntime.GPU
 - System.Drawing.common
+
+# NOTE
+This proof of concept is not viable for cheating since it has very bad predictions (camouflaged players, and high prediction delay **50-80ms**). please **do not cheat** on battlebit :)
